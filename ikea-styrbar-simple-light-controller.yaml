@@ -1,0 +1,553 @@
+blueprint:
+  name: IKEA STYRBAR Simple Light Controller
+  description: >-
+    A focused IKEA STYRBAR blueprint for controlling one light.
+
+    On and off always control the selected light. Holding on or off changes its
+    brightness by 10 points every 300 ms, with a 0.3 second transition. Holding left
+    moves through the configured colours toward warm/orange; holding right moves
+    toward cold/blue. Short presses can also run optional extra actions.
+
+    Configure either the ZHA remote or the Zigbee2MQTT remote name. Leave the
+    unused remote setting empty.
+  domain: automation
+  input:
+    controlled_light:
+      name: Light
+      description: The light controlled by every built-in button action.
+      selector:
+        entity:
+          filter:
+            domain: light
+          multiple: false
+
+    remote_device:
+      name: ZHA remote
+      description: Select the STYRBAR remote when using ZHA; otherwise leave empty.
+      default: ""
+      selector:
+        device:
+          filter:
+            - integration: zha
+              manufacturer: IKEA of Sweden
+              model: Remote Control N2
+          multiple: false
+
+    remote_name:
+      name: Zigbee2MQTT remote name
+      description: Zigbee2MQTT friendly name of the STYRBAR; otherwise leave empty.
+      default: ""
+      selector:
+        text: {}
+
+    base_topic:
+      name: Zigbee2MQTT base topic
+      default: zigbee2mqtt
+      selector:
+        text: {}
+
+    color_control_mode:
+      name: Left/right colour mode
+      description: Use colour temperatures for white-spectrum lights or RGB colours for colour lights.
+      default: color_temp
+      selector:
+        select:
+          options:
+            - label: Colour temperature
+              value: color_temp
+            - label: RGB colour
+              value: rgb
+
+    warm_temperature:
+      name: Warm temperature
+      description: Warm/orange end of the colour-temperature range.
+      default: 2200
+      selector:
+        color_temp:
+          unit: kelvin
+          min: 2000
+          max: 6500
+
+    neutral_temperature:
+      name: Neutral temperature
+      description: Middle colour temperature.
+      default: 2700
+      selector:
+        color_temp:
+          unit: kelvin
+          min: 2000
+          max: 6500
+
+    cold_temperature:
+      name: Cold temperature
+      description: Cold/blue end of the colour-temperature range.
+      default: 3400
+      selector:
+        color_temp:
+          unit: kelvin
+          min: 2000
+          max: 6500
+
+    warm_rgb:
+      name: Warm RGB colour
+      description: Warm/orange colour used in RGB mode.
+      default: [255, 120, 25]
+      selector:
+        color_rgb: {}
+
+    neutral_rgb:
+      name: Neutral RGB colour
+      description: Middle colour used in RGB mode.
+      default: [255, 220, 170]
+      selector:
+        color_rgb: {}
+
+    cold_rgb:
+      name: Cold RGB colour
+      description: Cold/blue colour used in RGB mode.
+      default: [80, 150, 255]
+      selector:
+        color_rgb: {}
+
+    on_press_extra_action:
+      name: On press - optional extra action
+      description: Runs after the selected light is turned on.
+      default: []
+      selector:
+        action: {}
+
+    off_press_extra_action:
+      name: Off press - optional extra action
+      description: Runs after the selected light is turned off.
+      default: []
+      selector:
+        action: {}
+
+    left_press_action:
+      name: Left short press - optional action
+      default: []
+      selector:
+        action: {}
+
+    right_press_action:
+      name: Right short press - optional action
+      default: []
+      selector:
+        action: {}
+
+mode: single
+max_exceeded: silent
+
+trigger_variables:
+  zha_remote: !input remote_device
+  z2m_base_topic: !input base_topic
+  z2m_controller: !input remote_name
+
+trigger:
+  # ZHA short presses
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: "on"
+      cluster_id: 6
+      endpoint_id: 1
+    id: press-on-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: "off"
+      cluster_id: 6
+      endpoint_id: 1
+    id: press-off-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: press
+      cluster_id: 5
+      endpoint_id: 1
+      args: [257, 13, 0]
+    id: press-left-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: press
+      cluster_id: 5
+      endpoint_id: 1
+      args: [256, 13, 0]
+    id: press-right-zha
+
+  # ZHA holds
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: move_with_on_off
+      cluster_id: 8
+      endpoint_id: 1
+      args: [0, 83]
+    id: hold-on-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: move
+      cluster_id: 8
+      endpoint_id: 1
+      args: [1, 83, 0]
+    id: hold-off-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: hold
+      cluster_id: 5
+      endpoint_id: 1
+      args: [3329, 0]
+    id: hold-left-zha
+  - platform: event
+    event_type: zha_event
+    event_data:
+      device_id: "{{ zha_remote }}"
+      command: hold
+      cluster_id: 5
+      endpoint_id: 1
+      args: [3328, 0]
+    id: hold-right-zha
+
+  # Zigbee2MQTT short presses
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: "on"
+    id: press-on-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: "off"
+    id: press-off-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: arrow_left_click
+    id: press-left-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: arrow_right_click
+    id: press-right-z2m
+
+  # Zigbee2MQTT holds
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: brightness_move_up
+    id: hold-on-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: brightness_move_down
+    id: hold-off-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: arrow_left_hold
+    id: hold-left-z2m
+  - platform: mqtt
+    topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+    payload: arrow_right_hold
+    id: hold-right-z2m
+
+action:
+  - variables:
+      light_entity: !input controlled_light
+      color_mode: !input color_control_mode
+      warm_temp: !input warm_temperature
+      neutral_temp: !input neutral_temperature
+      cold_temp: !input cold_temperature
+      warm_color: !input warm_rgb
+      neutral_color: !input neutral_rgb
+      cold_color: !input cold_rgb
+
+  - choose:
+      - conditions:
+          - condition: trigger
+            id: [press-on-zha, press-on-z2m]
+        sequence:
+          - action: light.turn_on
+            target:
+              entity_id: !input controlled_light
+          - choose: []
+            default: !input on_press_extra_action
+
+      - conditions:
+          - condition: trigger
+            id: [press-off-zha, press-off-z2m]
+        sequence:
+          - action: light.turn_off
+            target:
+              entity_id: !input controlled_light
+          - choose: []
+            default: !input off_press_extra_action
+
+      - conditions:
+          - condition: trigger
+            id: [press-left-zha, press-left-z2m]
+        sequence: !input left_press_action
+
+      - conditions:
+          - condition: trigger
+            id: [press-right-zha, press-right-z2m]
+        sequence: !input right_press_action
+
+      - conditions:
+          - condition: trigger
+            id: [hold-on-zha, hold-on-z2m]
+        sequence:
+          - repeat:
+              count: 100
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: !input controlled_light
+                  data:
+                    brightness_step: 10
+                    transition: 0.3
+                - choose:
+                    - conditions:
+                        - condition: trigger
+                          id: hold-on-zha
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: event
+                              event_type: zha_event
+                              event_data:
+                                device_id: "{{ zha_remote }}"
+                                command: stop_with_on_off
+                                cluster_id: 8
+                                endpoint_id: 1
+                          timeout:
+                            milliseconds: 300
+                          continue_on_timeout: true
+                    - conditions:
+                        - condition: trigger
+                          id: hold-on-z2m
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: mqtt
+                              topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+                              payload: brightness_stop
+                          timeout:
+                            milliseconds: 300
+                          continue_on_timeout: true
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.trigger is not none }}"
+                  then:
+                    - stop: Button released
+
+      - conditions:
+          - condition: trigger
+            id: [hold-off-zha, hold-off-z2m]
+        sequence:
+          - repeat:
+              count: 100
+              sequence:
+                - action: light.turn_on
+                  target:
+                    entity_id: !input controlled_light
+                  data:
+                    brightness_step: -10
+                    transition: 0.3
+                - choose:
+                    - conditions:
+                        - condition: trigger
+                          id: hold-off-zha
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: event
+                              event_type: zha_event
+                              event_data:
+                                device_id: "{{ zha_remote }}"
+                                command: stop
+                                cluster_id: 8
+                                endpoint_id: 1
+                          timeout:
+                            milliseconds: 300
+                          continue_on_timeout: true
+                    - conditions:
+                        - condition: trigger
+                          id: hold-off-z2m
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: mqtt
+                              topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+                              payload: brightness_stop
+                          timeout:
+                            milliseconds: 300
+                          continue_on_timeout: true
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.trigger is not none }}"
+                  then:
+                    - stop: Button released
+
+      - conditions:
+          - condition: trigger
+            id: [hold-left-zha, hold-left-z2m]
+        sequence:
+          - repeat:
+              count: 100
+              sequence:
+                - choose:
+                    - conditions: "{{ color_mode == 'color_temp' }}"
+                      sequence:
+                        - variables:
+                            current_temp: >-
+                              {{ state_attr(light_entity, 'color_temp_kelvin') | int(neutral_temp) }}
+                            target_temp: >-
+                              {% if current_temp > ((neutral_temp + cold_temp) / 2) %}
+                                {{ neutral_temp }}
+                              {% else %}
+                                {{ warm_temp }}
+                              {% endif %}
+                        - action: light.turn_on
+                          target:
+                            entity_id: !input controlled_light
+                          data:
+                            color_temp_kelvin: "{{ target_temp | int }}"
+                            transition: 0.4
+                  default:
+                    - variables:
+                        current_rgb: "{{ state_attr(light_entity, 'rgb_color') or neutral_color }}"
+                        nearest_index: >-
+                          {% set ns = namespace(index=1, distance=999999) %}
+                          {% for candidate in [warm_color, neutral_color, cold_color] %}
+                            {% set distance = ((current_rgb[0] | int - candidate[0] | int) ** 2
+                              + (current_rgb[1] | int - candidate[1] | int) ** 2
+                              + (current_rgb[2] | int - candidate[2] | int) ** 2) %}
+                            {% if distance < ns.distance %}
+                              {% set ns.distance = distance %}
+                              {% set ns.index = loop.index0 %}
+                            {% endif %}
+                          {% endfor %}
+                          {{ ns.index }}
+                        target_rgb: >-
+                          {{ [warm_color, neutral_color, cold_color]
+                            [[(nearest_index | int) - 1, 0] | max] }}
+                    - action: light.turn_on
+                      target:
+                        entity_id: !input controlled_light
+                      data:
+                        rgb_color: "{{ target_rgb }}"
+                        transition: 0.4
+                - choose:
+                    - conditions:
+                        - condition: trigger
+                          id: hold-left-zha
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: event
+                              event_type: zha_event
+                              event_data:
+                                device_id: "{{ zha_remote }}"
+                                endpoint_id: 1
+                                cluster_id: 5
+                                command: release
+                          timeout:
+                            milliseconds: 400
+                          continue_on_timeout: true
+                    - conditions:
+                        - condition: trigger
+                          id: hold-left-z2m
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: mqtt
+                              topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+                              payload: arrow_left_release
+                          timeout:
+                            milliseconds: 400
+                          continue_on_timeout: true
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.trigger is not none }}"
+                  then:
+                    - stop: Button released
+
+      - conditions:
+          - condition: trigger
+            id: [hold-right-zha, hold-right-z2m]
+        sequence:
+          - repeat:
+              count: 100
+              sequence:
+                - choose:
+                    - conditions: "{{ color_mode == 'color_temp' }}"
+                      sequence:
+                        - variables:
+                            current_temp: >-
+                              {{ state_attr(light_entity, 'color_temp_kelvin') | int(neutral_temp) }}
+                            target_temp: >-
+                              {% if current_temp < ((warm_temp + neutral_temp) / 2) %}
+                                {{ neutral_temp }}
+                              {% else %}
+                                {{ cold_temp }}
+                              {% endif %}
+                        - action: light.turn_on
+                          target:
+                            entity_id: !input controlled_light
+                          data:
+                            color_temp_kelvin: "{{ target_temp | int }}"
+                            transition: 0.4
+                  default:
+                    - variables:
+                        current_rgb: "{{ state_attr(light_entity, 'rgb_color') or neutral_color }}"
+                        nearest_index: >-
+                          {% set ns = namespace(index=1, distance=999999) %}
+                          {% for candidate in [warm_color, neutral_color, cold_color] %}
+                            {% set distance = ((current_rgb[0] | int - candidate[0] | int) ** 2
+                              + (current_rgb[1] | int - candidate[1] | int) ** 2
+                              + (current_rgb[2] | int - candidate[2] | int) ** 2) %}
+                            {% if distance < ns.distance %}
+                              {% set ns.distance = distance %}
+                              {% set ns.index = loop.index0 %}
+                            {% endif %}
+                          {% endfor %}
+                          {{ ns.index }}
+                        target_rgb: >-
+                          {{ [warm_color, neutral_color, cold_color]
+                            [[(nearest_index | int) + 1, 2] | min] }}
+                    - action: light.turn_on
+                      target:
+                        entity_id: !input controlled_light
+                      data:
+                        rgb_color: "{{ target_rgb }}"
+                        transition: 0.4
+                - choose:
+                    - conditions:
+                        - condition: trigger
+                          id: hold-right-zha
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: event
+                              event_type: zha_event
+                              event_data:
+                                device_id: "{{ zha_remote }}"
+                                endpoint_id: 1
+                                cluster_id: 5
+                                command: release
+                          timeout:
+                            milliseconds: 400
+                          continue_on_timeout: true
+                    - conditions:
+                        - condition: trigger
+                          id: hold-right-z2m
+                      sequence:
+                        - wait_for_trigger:
+                            - platform: mqtt
+                              topic: "{{ z2m_base_topic ~ '/' ~ z2m_controller ~ '/action' }}"
+                              payload: arrow_right_release
+                          timeout:
+                            milliseconds: 400
+                          continue_on_timeout: true
+                - if:
+                    - condition: template
+                      value_template: "{{ wait.trigger is not none }}"
+                  then:
+                    - stop: Button released
